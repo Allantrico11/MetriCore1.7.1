@@ -2,6 +2,48 @@ import streamlit as st
 from utils import aplicar_estilos
 from database import init_db, get_equipos, get_calibraciones, get_recordatorios_calibracion
 from datetime import datetime, date
+import io
+from docx import Document
+from docx.shared import RGBColor, Pt
+
+
+def generar_reporte_recordatorios_docx(tabla_recordatorios):
+    buffer = io.BytesIO()
+    doc = Document()
+
+    titulo = doc.add_heading("Reporte de recordatorios de calibración", level=1)
+    titulo.runs[0].font.color.rgb = RGBColor(0x0b, 0x2c, 0x40)
+
+    p = doc.add_paragraph()
+    p.add_run("Generado por MetriCore").bold = True
+    p.add_run(f" · Fecha de generación: {date.today().strftime('%d/%m/%Y')}")
+
+    doc.add_paragraph(
+        "Este reporte lista los equipos que requieren calibración o que tienen una "
+        "calibración próxima dentro de los siguientes 30 días."
+    )
+
+    if tabla_recordatorios.empty:
+        doc.add_paragraph("No hay recordatorios pendientes.")
+    else:
+        table = doc.add_table(rows=1, cols=len(tabla_recordatorios.columns))
+        table.style = "Table Grid"
+        for i, col in enumerate(tabla_recordatorios.columns):
+            cell = table.rows[0].cells[i]
+            cell.text = str(col)
+            for run in cell.paragraphs[0].runs:
+                run.bold = True
+                run.font.size = Pt(9)
+
+        for _, row in tabla_recordatorios.iterrows():
+            cells = table.add_row().cells
+            for i, col in enumerate(tabla_recordatorios.columns):
+                cells[i].text = "" if row[col] is None else str(row[col])
+                for run in cells[i].paragraphs[0].runs:
+                    run.font.size = Pt(8)
+
+    doc.save(buffer)
+    return buffer.getvalue()
 
 st.set_page_config(
     page_title="MetriCore",
@@ -126,10 +168,10 @@ else:
     })
     st.dataframe(tabla_recordatorios, use_container_width=True, hide_index=True)
     st.download_button(
-        "Descargar recordatorios CSV",
-        data=tabla_recordatorios.to_csv(index=False).encode("utf-8-sig"),
-        file_name=f"recordatorios_calibracion_{date.today()}.csv",
-        mime="text/csv; charset=utf-8",
+        "Descargar recordatorios Word",
+        data=generar_reporte_recordatorios_docx(tabla_recordatorios),
+        file_name=f"recordatorios_calibracion_{date.today()}.docx",
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         use_container_width=True,
     )
 
